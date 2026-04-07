@@ -1,17 +1,63 @@
 import '../../data/database/ingredient_database.dart';
 import '../../data/database/ingredient_matcher.dart';
+import '../../data/models/gemini_analysis_result.dart';
 import '../../data/models/scan_analysis_result.dart';
 import '../../data/models/user_profile.dart';
+import 'gemini_service.dart';
 
-/// On-device ingredient analysis engine.
+/// On-device ingredient analysis engine with Gemini AI fallback.
 ///
-/// Matches extracted text against the Indian compliance database (IS 4707)
-/// and scores the product on safety for the given user profile.
+/// Primary: Gemini AI for deep multi-jurisdiction regulatory analysis.
+/// Fallback: Local IS 4707 database matching when offline.
 class AnalysisEngine {
   AnalysisEngine._();
 
-  /// Analyze ingredient text and produce a full result.
-  static ScanAnalysisResult analyze({
+  /// Analyze with Gemini first, fall back to local DB if unavailable.
+  static Future<ScanAnalysisResult> analyzeWithFallback({
+    required String ingredientsText,
+    required UserProfile userProfile,
+    String? productName,
+    String? brand,
+    String? productCategory,
+    String? applicationType,
+  }) async {
+    // Try Gemini first
+    if (GeminiService.isAvailable) {
+      try {
+        final geminiResult = await GeminiService.analyze(
+          ingredientsText: ingredientsText,
+          userProfile: userProfile,
+          productName: productName,
+          productCategory: productCategory,
+          applicationType: applicationType,
+        );
+
+        if (geminiResult != null) {
+          return ScanAnalysisResult.fromGemini(
+            gemini: geminiResult,
+            ingredientsText: ingredientsText,
+          );
+        }
+      } catch (e) {
+        // Gemini failed (bad JSON, network error, etc.) — fall through to
+        // offline analysis instead of crashing.
+        // ignore: avoid_print
+        print('Gemini AI analysis failed, falling back to offline: $e');
+      }
+    }
+
+    // Fallback to local analysis
+    return analyzeOffline(
+      ingredientsText: ingredientsText,
+      userProfile: userProfile,
+      productName: productName,
+      brand: brand,
+      productCategory: productCategory,
+    );
+  }
+
+  /// Local-only analysis using IS 4707 database.
+  static ScanAnalysisResult analyzeOffline({
     required String ingredientsText,
     required UserProfile userProfile,
     String? productName,
@@ -37,6 +83,13 @@ class AnalysisEngine {
             .add('Not recommended for ${userProfile.skinType.label} skin');
       }
 
+      final flagColor = switch (entry.severity) {
+        'harmful' => FlagColor.red,
+        'caution' => FlagColor.yellow,
+        'safe' => FlagColor.green,
+        _ => FlagColor.grey,
+      };
+
       findings.add(IngredientFinding(
         name: entry.name,
         severity: entry.severity,
@@ -46,6 +99,12 @@ class AnalysisEngine {
         isAllergen: entry.isAllergen,
         maxAllowedConcentration: entry.maxConcentrationPercent,
         matchConfidence: match.confidence,
+        flagColor: flagColor,
+        confidence: match.confidence >= 0.9
+            ? ConfidenceLevel.high
+            : match.confidence >= 0.7
+                ? ConfidenceLevel.medium
+                : ConfidenceLevel.low,
       ));
 
       switch (entry.severity) {
@@ -60,8 +119,13 @@ class AnalysisEngine {
 
     // Sort: harmful first, then caution, then safe
     findings.sort((a, b) {
-      const order = {'harmful': 0, 'caution': 1, 'safe': 2};
-      return (order[a.severity] ?? 3).compareTo(order[b.severity] ?? 3);
+      const order = {
+        FlagColor.red: 0,
+        FlagColor.yellow: 1,
+        FlagColor.green: 2,
+        FlagColor.grey: 3,
+      };
+      return (order[a.flagColor] ?? 3).compareTo(order[b.flagColor] ?? 3);
     });
 
     // 3. Calculate score
@@ -94,8 +158,7 @@ class AnalysisEngine {
     final allergenWarnings = <String>[];
     for (final match in matches) {
       if (match.entry.isAllergen) {
-        allergenWarnings
-            .add('${match.entry.name} is a known allergen');
+        allergenWarnings.add('${match.entry.name} is a known allergen');
       }
       if (_isUserAllergen(match.entry, userProfile.allergies)) {
         allergenWarnings
@@ -151,15 +214,20 @@ class AnalysisEngine {
       cautionCount: cautionCount,
       safeCount: safeCount,
       analyzedAt: DateTime.now(),
+      isGeminiAnalysis: false,
     );
   }
 
   /// Check if a DB entry matches any of the user's declared allergies.
-  static bool _isUserAllergen(IngredientEntry entry, List<String> userAllergies) {
+  static bool _isUserAllergen(
+      IngredientEntry entry, List<String> userAllergies) {
     if (userAllergies.isEmpty) return false;
 
     final entryNameLower = entry.name.toLowerCase();
-    final allNamesLower = [entryNameLower, ...entry.aliases.map((a) => a.toLowerCase())];
+    final allNamesLower = [
+      entryNameLower,
+      ...entry.aliases.map((a) => a.toLowerCase())
+    ];
 
     for (final allergy in userAllergies) {
       final allergyLower = allergy.toLowerCase();
@@ -204,7 +272,7 @@ class AnalysisEngine {
 
     if (totalMatched == 0) {
       return 'No recognized ingredients were found in the scanned text. '
-          'Try capturing a clearer image or entering the ingredients manually.';
+          'Try capturing a clearer image of the ingredient list.';
     }
 
     buf.write(
@@ -239,7 +307,12 @@ class AnalysisEngine {
   }) {
     final category = (productCategory ?? '').toLowerCase();
     final isRinseOff = <String>{
-      'cleanser', 'face wash', 'body wash', 'shampoo', 'soap', 'scrub',
+      'cleanser',
+      'face wash',
+      'body wash',
+      'shampoo',
+      'soap',
+      'scrub',
     }.any((c) => category.contains(c));
 
     final buf = StringBuffer();
@@ -263,8 +336,7 @@ class AnalysisEngine {
             ? 'Use sparingly. Avoid long contact. Limit to a few times per week.'
             : 'Limit to 1-2 times per week. Avoid daily use.');
       case SafetyRating.e:
-        buf.write(
-            'Not recommended. Consider a safer alternative.');
+        buf.write('Not recommended. Consider a safer alternative.');
     }
 
     // Skin-type specific addition
@@ -285,6 +357,9 @@ class AnalysisEngine {
       case SkinType.normal:
         buf.write(
             '✨ For normal skin: This product should work well. Maintain your routine and stay hydrated.');
+      case SkinType.acneProne:
+        buf.write(
+            '🔬 For acne-prone skin: Avoid comedogenic ingredients. Look for non-comedogenic labels and salicylic acid/niacinamide products.');
     }
 
     if (harmfulCount > 0) {

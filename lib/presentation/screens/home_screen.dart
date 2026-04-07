@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/providers/profile_provider.dart';
+import '../../core/services/gemini_service.dart';
 import '../../data/models/user_profile.dart';
 import 'profile_screen.dart';
 import 'scan_screen.dart';
@@ -10,12 +14,58 @@ import 'scan_screen.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  static bool get _isMobileCameraAvailable =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  Future<void> _captureWithCamera(BuildContext context) async {
+    if (!_isMobileCameraAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Camera is only available on Android & iOS.'),
+        ),
+      );
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 92,
+      preferredCameraDevice: CameraDevice.rear,
+    );
+    if (picked != null && context.mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ScanScreen(imageFile: picked),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickFromGallery(BuildContext context) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 92,
+    );
+    if (picked != null && context.mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ScanScreen(imageFile: picked),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final isWide = width >= 900;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final profile = context.watch<ProfileProvider>().profile;
+    final isAiMode = GeminiService.isAvailable;
 
     return Scaffold(
       body: Container(
@@ -157,7 +207,8 @@ class HomeScreen extends StatelessWidget {
                           const SizedBox(width: 14),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   '${profile.skinType.label} Skin',
@@ -168,9 +219,7 @@ class HomeScreen extends StatelessWidget {
                                           fontWeight: FontWeight.w700),
                                 ),
                                 Text(
-                                  profile.allergies.isEmpty
-                                      ? 'No allergens set'
-                                      : '${profile.allergies.length} allergen${profile.allergies.length == 1 ? '' : 's'} tracked',
+                                  _buildProfileSubtitle(profile),
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodySmall
@@ -188,7 +237,8 @@ class HomeScreen extends StatelessWidget {
                           TextButton(
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
-                                  builder: (_) => const ProfileScreen()),
+                                  builder: (_) =>
+                                      const ProfileScreen()),
                             ),
                             child: const Text('Edit'),
                           ),
@@ -203,23 +253,201 @@ class HomeScreen extends StatelessWidget {
                             duration: 400.ms,
                             delay: 300.ms),
 
+                    const SizedBox(height: 36),
+
+                    // ─── Scan & Upload Buttons ────────────
+                    Text(
+                      'Scan a Product',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
+                          ),
+                      textAlign: TextAlign.center,
+                    )
+                        .animate()
+                        .fadeIn(duration: 400.ms, delay: 400.ms),
+                    const SizedBox(height: 8),
+                    Text(
+                      isAiMode
+                          ? 'Capture or upload the ingredient label for\nAI-powered regulatory analysis across 🇮🇳 🇪🇺 🇺🇸'
+                          : 'Capture or upload the ingredient label to get\ninstant safety ratings based on Indian standards.',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(
+                            color: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.color
+                                ?.withValues(alpha: 0.6),
+                            height: 1.5,
+                          ),
+                      textAlign: TextAlign.center,
+                    )
+                        .animate()
+                        .fadeIn(duration: 400.ms, delay: 450.ms),
+
                     const SizedBox(height: 28),
 
-                    // ─── Main content ────────────────────
+                    // Action buttons
                     if (isWide)
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(child: _HeroCard(isDark: isDark)),
-                          const SizedBox(width: 20),
-                          Expanded(child: _FeatureCard(isDark: isDark)),
+                          if (_isMobileCameraAvailable) ...[
+                            Expanded(
+                              child: _BigActionButton(
+                                icon: Icons.camera_alt_rounded,
+                                label: 'Scan',
+                                subtitle:
+                                    'Use camera to capture label',
+                                gradient: const [
+                                  Color(0xFF10B981),
+                                  Color(0xFF059669),
+                                ],
+                                onTap: () =>
+                                    _captureWithCamera(context),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                          ],
+                          Expanded(
+                            child: _BigActionButton(
+                              icon: Icons.photo_library_rounded,
+                              label: 'Upload',
+                              subtitle: 'Choose photo from gallery',
+                              gradient: const [
+                                Color(0xFF8B5CF6),
+                                Color(0xFF7C3AED),
+                              ],
+                              onTap: () =>
+                                  _pickFromGallery(context),
+                            ),
+                          ),
                         ],
                       )
-                    else ...[
-                      _HeroCard(isDark: isDark),
-                      const SizedBox(height: 20),
-                      _FeatureCard(isDark: isDark),
-                    ],
+                          .animate()
+                          .fadeIn(duration: 500.ms, delay: 500.ms)
+                          .slideY(
+                              begin: 0.15,
+                              end: 0,
+                              duration: 500.ms,
+                              delay: 500.ms)
+                    else
+                      Column(
+                        children: [
+                          if (_isMobileCameraAvailable) ...[
+                            _BigActionButton(
+                              icon: Icons.camera_alt_rounded,
+                              label: 'Scan',
+                              subtitle:
+                                  'Use camera to capture label',
+                              gradient: const [
+                                Color(0xFF10B981),
+                                Color(0xFF059669),
+                              ],
+                              onTap: () =>
+                                  _captureWithCamera(context),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          _BigActionButton(
+                            icon: Icons.photo_library_rounded,
+                            label: 'Upload',
+                            subtitle: 'Choose photo from gallery',
+                            gradient: const [
+                              Color(0xFF8B5CF6),
+                              Color(0xFF7C3AED),
+                            ],
+                            onTap: () =>
+                                _pickFromGallery(context),
+                          ),
+                        ],
+                      )
+                          .animate()
+                          .fadeIn(duration: 500.ms, delay: 500.ms)
+                          .slideY(
+                              begin: 0.15,
+                              end: 0,
+                              duration: 500.ms,
+                              delay: 500.ms),
+
+                    const SizedBox(height: 28),
+
+                    // ─── Mode badge ────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF1F2937)
+                            : isAiMode
+                                ? const Color(0xFF1E1042)
+                                : const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: (isAiMode
+                                      ? const Color(0xFF8B5CF6)
+                                      : const Color(0xFF10B981))
+                                  .withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              isAiMode
+                                  ? Icons.auto_awesome_rounded
+                                  : Icons.offline_bolt_rounded,
+                              color: isAiMode
+                                  ? const Color(0xFF8B5CF6)
+                                  : const Color(0xFF10B981),
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isAiMode
+                                      ? 'AI-Powered Regulatory Analysis'
+                                      : '100% Offline Analysis',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  isAiMode
+                                      ? 'Deep analysis across India (CDSCO), EU, and US FDA regulations using Gemini AI.'
+                                      : 'All scanning & analysis runs on your device. No data ever leaves your phone.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.65),
+                                        height: 1.4,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                        .animate()
+                        .fadeIn(duration: 400.ms, delay: 600.ms),
 
                     const SizedBox(height: 20),
 
@@ -234,205 +462,107 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-}
 
-// ─── Hero Card ───────────────────────────────────────────────
-class _HeroCard extends StatelessWidget {
-  final bool isDark;
-  const _HeroCard({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF10B981), Color(0xFF059669)],
-                ),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Icon(
-                Icons.document_scanner_rounded,
-                color: Colors.white,
-                size: 30,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Scan & Analyze\nIngredients',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Point your camera at the back label or upload a photo. Get instant safety ratings from A to E based on Indian cosmetic standards.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.color
-                        ?.withValues(alpha: 0.65),
-                    height: 1.5,
-                  ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                      builder: (_) => const ScanScreen()),
-                ),
-                icon: const Icon(Icons.qr_code_scanner_rounded),
-                label: const Text('Start Analysis'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    )
-        .animate()
-        .fadeIn(duration: 500.ms, delay: 400.ms)
-        .slideY(begin: 0.15, end: 0, duration: 500.ms, delay: 400.ms);
+  String _buildProfileSubtitle(UserProfile profile) {
+    final parts = <String>[];
+    if (profile.allergies.isEmpty) {
+      parts.add('No allergens set');
+    } else {
+      parts.add(
+          '${profile.allergies.length} allergen${profile.allergies.length == 1 ? '' : 's'}');
+    }
+    if (profile.condition != DeclaredCondition.none) {
+      parts.add(profile.condition.label);
+    }
+    return parts.join(' · ');
   }
 }
 
-// ─── Feature Card ────────────────────────────────────────────
-class _FeatureCard extends StatelessWidget {
-  final bool isDark;
-  const _FeatureCard({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <_FeatureItem>[
-      _FeatureItem(
-        icon: Icons.camera_alt_rounded,
-        color: const Color(0xFF10B981),
-        title: 'Camera + Upload',
-        desc: 'Capture via camera on mobile, or upload on any platform.',
-      ),
-      _FeatureItem(
-        icon: Icons.shield_rounded,
-        color: const Color(0xFFF59E0B),
-        title: 'Indian Compliance',
-        desc: 'Checked against IS 4707, Schedule Q & CDSCO standards.',
-      ),
-      _FeatureItem(
-        icon: Icons.palette_rounded,
-        color: const Color(0xFFEF4444),
-        title: 'Color-coded Results',
-        desc: '🔴 Harmful  🟡 Caution  🟢 Safe — at a glance.',
-      ),
-      _FeatureItem(
-        icon: Icons.person_rounded,
-        color: const Color(0xFF8B5CF6),
-        title: 'Personalized',
-        desc: 'Tailored to your skin type, allergies & age.',
-      ),
-    ];
-
-    return Card(
-      color: isDark ? const Color(0xFF111827) : const Color(0xFF0F172A),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'How It Works',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            for (var i = 0; i < items.length; i++) ...[
-              _FeatureRow(item: items[i], index: i),
-              if (i < items.length - 1) const SizedBox(height: 16),
-            ],
-          ],
-        ),
-      ),
-    )
-        .animate()
-        .fadeIn(duration: 500.ms, delay: 500.ms)
-        .slideY(begin: 0.15, end: 0, duration: 500.ms, delay: 500.ms);
-  }
-}
-
-class _FeatureItem {
+// ─── Big Action Button ───────────────────────────────────────
+class _BigActionButton extends StatelessWidget {
   final IconData icon;
-  final Color color;
-  final String title;
-  final String desc;
-  const _FeatureItem({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.desc,
-  });
-}
+  final String label;
+  final String subtitle;
+  final List<Color> gradient;
+  final VoidCallback onTap;
 
-class _FeatureRow extends StatelessWidget {
-  final _FeatureItem item;
-  final int index;
-  const _FeatureRow({required this.item, required this.index});
+  const _BigActionButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.gradient,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
           decoration: BoxDecoration(
-            color: item.color.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(14),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                gradient[0].withValues(alpha: 0.15),
+                gradient[1].withValues(alpha: 0.08),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: gradient[0].withValues(alpha: 0.3),
+              width: 1.5,
+            ),
           ),
-          child: Icon(item.icon, color: item.color, size: 20),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                item.title,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: gradient),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: gradient[0].withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
                     ),
+                  ],
+                ),
+                child: Icon(icon, color: Colors.white, size: 34),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: gradient[0],
+                ),
               ),
               const SizedBox(height: 4),
               Text(
-                item.desc,
+                subtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      height: 1.4,
+                      color: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.color
+                          ?.withValues(alpha: 0.6),
                     ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
         ),
-      ],
-    )
-        .animate()
-        .fadeIn(
-            duration: 350.ms,
-            delay: Duration(milliseconds: 600 + (index * 100)))
-        .slideX(
-            begin: 0.15,
-            end: 0,
-            duration: 350.ms,
-            delay: Duration(milliseconds: 600 + (index * 100)));
+      ),
+    );
   }
 }
 
@@ -446,8 +576,8 @@ class _RatingLegend extends StatelessWidget {
     final ratings = [
       ('A', 'Excellent', const Color(0xFF10B981)),
       ('B', 'Good', const Color(0xFF34D399)),
-      ('C', 'Average', const Color(0xFFF59E0B)),
-      ('D', 'Below Avg', const Color(0xFFF97316)),
+      ('C', 'Caution', const Color(0xFFF59E0B)),
+      ('D', 'Poor', const Color(0xFFF97316)),
       ('E', 'Avoid', const Color(0xFFEF4444)),
     ];
 

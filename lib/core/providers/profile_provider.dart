@@ -65,6 +65,18 @@ class ProfileProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateCondition(DeclaredCondition condition) async {
+    _profile = _profile.copyWith(condition: condition);
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> updateUsageFrequency(UsageFrequency frequency) async {
+    _profile = _profile.copyWith(usageFrequency: frequency);
+    await _save();
+    notifyListeners();
+  }
+
   Future<void> completeOnboarding() async {
     _profile = _profile.copyWith(onboardingComplete: true);
     await _save();

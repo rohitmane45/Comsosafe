@@ -30,6 +30,12 @@ dependencies:
   # Circular percent indicator for rating badge
   percent_indicator: ^4.2.3
 
+  # HTTP client for generic REST API access
+  http: ^1.2.0
+
+  # Online/offline detection for dual-mode analysis
+  connectivity_plus: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -20,6 +20,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late SkinType _skinType;
   late List<String> _allergies;
   late int _ageRange;
+  late DeclaredCondition _condition;
+  late UsageFrequency _usageFrequency;
   bool _hasChanges = false;
 
   @override
@@ -30,6 +32,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _skinType = profile.skinType;
     _allergies = List.from(profile.allergies);
     _ageRange = profile.ageRange;
+    _condition = profile.condition;
+    _usageFrequency = profile.usageFrequency;
   }
 
   @override
@@ -46,6 +50,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       allergies: _allergies,
       ageRange: _ageRange,
       onboardingComplete: true,
+      condition: _condition,
+      usageFrequency: _usageFrequency,
     ));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -186,6 +192,100 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     const SizedBox(height: 28),
 
+                    // ─── Health Condition ──────────
+                    _SectionHeader(
+                      icon: Icons.health_and_safety_rounded,
+                      title: 'Health Condition',
+                      color: const Color(0xFFEC4899),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Certain ingredients are flagged differently during pregnancy or breastfeeding.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.color
+                                ?.withValues(alpha: 0.55),
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: DeclaredCondition.values.map((c) {
+                        final isSelected = _condition == c;
+                        return ChoiceChip(
+                          avatar: Text(c.emoji, style: const TextStyle(fontSize: 16)),
+                          label: Text(
+                            c.label,
+                            style: TextStyle(
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isSelected ? Colors.white : null,
+                            ),
+                          ),
+                          selected: isSelected,
+                          onSelected: (_) {
+                            setState(() {
+                              _condition = c;
+                              _hasChanges = true;
+                            });
+                          },
+                          selectedColor: const Color(0xFFEC4899),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        );
+                      }).toList(),
+                    )
+                        .animate()
+                        .fadeIn(duration: 400.ms, delay: 250.ms),
+
+                    const SizedBox(height: 28),
+
+                    // ─── Usage Frequency ───────────
+                    _SectionHeader(
+                      icon: Icons.schedule_rounded,
+                      title: 'Typical Usage Frequency',
+                      color: const Color(0xFF3B82F6),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: UsageFrequency.values.map((f) {
+                        final isSelected = _usageFrequency == f;
+                        return ChoiceChip(
+                          label: Text(
+                            f.label,
+                            style: TextStyle(
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isSelected ? Colors.white : null,
+                            ),
+                          ),
+                          selected: isSelected,
+                          onSelected: (_) {
+                            setState(() {
+                              _usageFrequency = f;
+                              _hasChanges = true;
+                            });
+                          },
+                          selectedColor: const Color(0xFF3B82F6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        );
+                      }).toList(),
+                    )
+                        .animate()
+                        .fadeIn(duration: 400.ms, delay: 300.ms),
+
+                    const SizedBox(height: 28),
+
                     // ─── Allergies ─────────────────
                     _SectionHeader(
                       icon: Icons.warning_amber_rounded,
@@ -216,7 +316,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                     )
                         .animate()
-                        .fadeIn(duration: 400.ms, delay: 300.ms),
+                        .fadeIn(duration: 400.ms, delay: 350.ms),
 
                     const SizedBox(height: 32),
 
